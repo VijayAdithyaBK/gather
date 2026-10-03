@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <filter id="neckShadow3" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="1" dy="6" stdDeviation="6" flood-opacity="0.15"/>
+    </filter>
+  </defs>
+  <g filter="url(#neckShadow3)">
+    <!-- Face Silhouette wire shape -->
+    <path d="M190 80 C220 70, 250 90, 230 130 C230 145, 245 155, 245 170 C245 185, 225 195, 230 220 C235 245, 200 280, 170 300"
+          stroke="#999" stroke-width="2" fill="none"/>
+    <!-- Black Onyx Beads along chain -->
+    <circle cx="180" cy="95" r="5" fill="#111" stroke="#333" stroke-width="1"/>
+    <circle cx="175" cy="110" r="5" fill="#111" stroke="#333" stroke-width="1"/>
+    <circle cx="172" cy="125" r="5" fill="#111" stroke="#333" stroke-width="1"/>
+    <circle cx="170" cy="140" r="5" fill="#111" stroke="#333" stroke-width="1"/>
+    <circle cx="168" cy="155" r="5" fill="#111" stroke="#333" stroke-width="1"/>
+    <!-- Brass/Gold tube segment -->
+    <line x1="220" y1="85" x2="235" y2="115" stroke="#C5A059" stroke-width="5" stroke-linecap="round"/>
+    <!-- Black Onyx Jewel Pendant -->
+    <rect x="198" y="325" width="24" height="24" rx="4" fill="#18181B" stroke="#000000" stroke-width="2"/>
+    <circle cx="210" cy="337" r="4" fill="#71717A"/>
+  </g>
+</svg>

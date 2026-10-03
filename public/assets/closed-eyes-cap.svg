@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <filter id="capShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <g filter="url(#capShadow)">
+    <!-- Pinstripe Cap Crown -->
+    <path d="M120 220 C110 130, 290 130, 280 220 Z" fill="#1A2230" stroke="#111" stroke-width="2.5"/>
+    <!-- Button on top -->
+    <ellipse cx="200" cy="130" rx="8" ry="4" fill="#243044"/>
+    <!-- Pinstripes -->
+    <path d="M145 220 C140 160, 160 140, 185 132" stroke="#FFF" stroke-width="1.5" stroke-opacity="0.5" fill="none"/>
+    <path d="M170 220 C168 160, 180 140, 195 132" stroke="#FFF" stroke-width="1.5" stroke-opacity="0.5" fill="none"/>
+    <path d="M230 220 C232 160, 220 140, 205 132" stroke="#FFF" stroke-width="1.5" stroke-opacity="0.5" fill="none"/>
+    <path d="M255 220 C260 160, 240 140, 215 132" stroke="#FFF" stroke-width="1.5" stroke-opacity="0.5" fill="none"/>
+    <!-- Visor / Brim -->
+    <path d="M110 220 C110 260, 290 260, 290 220 C250 235, 150 235, 110 220 Z" fill="#151C28" stroke="#111" stroke-width="2.5"/>
+    <!-- Embroidered Closed Eyes (white lashes) -->
+    <g transform="translate(160, 195)">
+      <path d="M0 10 Q12 0 24 10" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" fill="none"/>
+      <line x1="4" y1="7" x2="2" y2="15" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="12" y1="5" x2="12" y2="16" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="20" y1="7" x2="22" y2="15" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <g transform="translate(216, 195)">
+      <path d="M0 10 Q12 0 24 10" stroke="#FFFFFF" stroke-width="3" stroke-linecap="round" fill="none"/>
+      <line x1="4" y1="7" x2="2" y2="15" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="12" y1="5" x2="12" y2="16" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="20" y1="7" x2="22" y2="15" stroke="#FFFFFF" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

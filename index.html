@@ -27,6 +27,10 @@
           <kbd class="kbd-hint">⌘K</kbd>
         </button>
         <a href="#collection">Collection</a>
+        <button id="notion-sync-btn" class="nav-btn notion-pill-btn" title="Sync with Notion Cloud Database">
+          <span class="notion-dot" id="notion-header-dot"></span>
+          <span id="notion-btn-label">Notion</span>
+        </button>
         <button id="cart-toggle-btn" class="nav-btn">
           <span>Cart</span>
           <span id="cart-badge-count" class="cart-pill">0</span>
@@ -302,6 +306,58 @@
       <div class="collections-list" id="collections-list-container">
         <!-- Rendered dynamically by app.js -->
       </div>
+    </div>
+  </div>
+
+  <!-- Notion Cloud Database Sync Modal -->
+  <div class="modal-back" id="notion-modal-back">
+    <div class="modal notion-modal">
+      <div class="modal-header-row">
+        <div>
+          <div class="eyebrow" style="margin-bottom: 2px;">Cloud Database</div>
+          <h2>Sync with Notion ✳</h2>
+          <p>Connect your Notion database to load and sync finds across all devices.</p>
+        </div>
+        <button class="textbtn close-notion-modal" id="close-notion-modal" style="font-size: 22px;">×</button>
+      </div>
+
+      <div class="notion-status-card" id="notion-status-card">
+        <div class="notion-status-indicator" id="notion-status-indicator"></div>
+        <div class="notion-status-text">
+          <strong id="notion-status-title">Not Connected</strong>
+          <span id="notion-status-subtitle">Connect your Notion database to sync across devices</span>
+        </div>
+        <a id="notion-open-db-link" href="https://app.notion.com/p/3ef960e7697c80f4a73df3725c6fb3db" target="_blank" rel="noopener noreferrer" class="notion-open-link" style="display: none;">Open in Notion ↗</a>
+      </div>
+
+      <form id="notion-config-form" class="notion-form">
+        <div class="notion-field">
+          <label for="notion-db-id">Notion Database ID</label>
+          <input type="text" id="notion-db-id" placeholder="32-character Database ID" value="3ef960e7697c80f4a73df3725c6fb3db" required autocomplete="off" />
+        </div>
+
+        <div class="notion-field">
+          <div class="field-label-row">
+            <label for="notion-token">Notion Integration Token (API Key)</label>
+            <a href="https://www.notion.so/profile/integrations" target="_blank" rel="noopener noreferrer" class="notion-hint-link">Get your token ↗</a>
+          </div>
+          <input type="password" id="notion-token" placeholder="secret_... or ntn_..." required autocomplete="off" />
+          <span class="field-hint">Stored securely on your device. Enables seamless sync on any phone or laptop.</span>
+        </div>
+
+        <div class="notion-toggle-row">
+          <label class="toggle-label">
+            <input type="checkbox" id="notion-auto-sync" checked />
+            <span>Auto-pull finds from Notion on app startup</span>
+          </label>
+        </div>
+
+        <div class="notion-actions-row">
+          <button type="submit" id="notion-connect-btn" class="primary">Connect & Pull Finds</button>
+          <button type="button" id="notion-push-all-btn" class="secondary-btn" style="display: none;">Push Local to Notion</button>
+          <button type="button" id="notion-disconnect-btn" class="textbtn text-danger" style="display: none;">Disconnect</button>
+        </div>
+      </form>
     </div>
   </div>
 

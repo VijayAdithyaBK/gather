@@ -113,7 +113,333 @@ document.addEventListener('DOMContentLoaded', () => {
   const exportCsvBtn = document.getElementById('export-csv-btn');
   const exportJsonBtn = document.getElementById('export-json-btn');
   const restoreDefaultsBtn = document.getElementById('restore-defaults-btn');
-  const toastEl = document.getElementById('toast');
+  // Notion Modal & Sync Elements
+  const notionSyncBtn = document.getElementById('notion-sync-btn');
+  const notionHeaderDot = document.getElementById('notion-header-dot');
+  const notionBtnLabel = document.getElementById('notion-btn-label');
+  const notionModalBack = document.getElementById('notion-modal-back');
+  const closeNotionModalBtn = document.getElementById('close-notion-modal');
+  const notionStatusIndicator = document.getElementById('notion-status-indicator');
+  const notionStatusTitle = document.getElementById('notion-status-title');
+  const notionStatusSubtitle = document.getElementById('notion-status-subtitle');
+  const notionOpenDbLink = document.getElementById('notion-open-db-link');
+  const notionConfigForm = document.getElementById('notion-config-form');
+  const notionDbIdInput = document.getElementById('notion-db-id');
+  const notionTokenInput = document.getElementById('notion-token');
+  const notionAutoSyncInput = document.getElementById('notion-auto-sync');
+  const notionConnectBtn = document.getElementById('notion-connect-btn');
+  const notionPushAllBtn = document.getElementById('notion-push-all-btn');
+  const notionDisconnectBtn = document.getElementById('notion-disconnect-btn');
+
+  // ==========================================
+  // Notion Cloud Database Sync Engine
+  // ==========================================
+  const DEFAULT_NOTION_DB_ID = '3ef960e7697c80f4a73df3725c6fb3db';
+  const DEFAULT_NOTION_TOKEN = '';
+
+  function getNotionConfig() {
+    try {
+      const saved = localStorage.getItem('gather_notion_config');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return {
+      databaseId: DEFAULT_NOTION_DB_ID,
+      token: '',
+      autoSync: true,
+      connected: false,
+      lastSync: null
+    };
+  }
+
+  function saveNotionConfig(cfg) {
+    try {
+      localStorage.setItem('gather_notion_config', JSON.stringify(cfg));
+    } catch (e) {}
+    updateNotionUI();
+  }
+
+  async function callNotionApi(endpoint, method = 'GET', body = null) {
+    const cfg = getNotionConfig();
+    const token = cfg.token || DEFAULT_NOTION_TOKEN;
+    if (!token) {
+      throw new Error('Notion integration token missing');
+    }
+
+    const payload = body ? JSON.stringify(body) : undefined;
+    const directHeaders = {
+      'Authorization': `Bearer ${token}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json'
+    };
+
+    // 1. Direct Notion API fetch (Native CORS supported)
+    try {
+      const res = await fetch(`https://api.notion.com/v1${endpoint}`, {
+        method,
+        headers: directHeaders,
+        body: payload
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+      if (res.status === 401 || res.status === 403 || res.status === 404) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(errJson.message || `Notion API Error: ${res.status}`);
+      }
+    } catch (directErr) {
+      // 2. Local Proxy Fallback (if running on localhost server)
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        try {
+          const proxyRes = await fetch(`/api/notion/proxy?endpoint=${encodeURIComponent(endpoint)}`, {
+            method,
+            headers: {
+              'x-notion-token': token,
+              'Content-Type': 'application/json'
+            },
+            body: payload
+          });
+          if (proxyRes.ok) {
+            return await proxyRes.json();
+          }
+          const proxyErr = await proxyRes.json().catch(() => ({}));
+          throw new Error(proxyErr.message || proxyErr.error || `Proxy Error: ${proxyRes.status}`);
+        } catch (proxyErr) {
+          throw proxyErr;
+        }
+      }
+      throw directErr;
+    }
+  }
+
+  async function pullFromNotion(opts = {}) {
+    const cfg = getNotionConfig();
+    const dbId = (cfg.databaseId || DEFAULT_NOTION_DB_ID).replace(/-/g, '');
+    const token = cfg.token || DEFAULT_NOTION_TOKEN;
+
+    if (!dbId || !token) {
+      if (!opts.silent) toast('Enter your Notion Database ID and Token');
+      return false;
+    }
+
+    try {
+      if (!opts.silent) toast('Connecting to Notion database...');
+      const data = await callNotionApi(`/databases/${dbId}/query`, 'POST', {
+        page_size: 100
+      });
+
+      if (!data || !Array.isArray(data.results)) {
+        throw new Error('Invalid response from Notion database query');
+      }
+
+      // Convert Notion pages into Gather items
+      const notionItems = data.results.map(page => {
+        const props = page.properties || {};
+        const title = props.Name?.title?.[0]?.plain_text || props.Name?.title?.[0]?.text?.content || 'Untitled Find';
+        const price = props.Price?.rich_text?.[0]?.plain_text || 'Price not listed';
+        const store = props['Store ']?.select?.name || props['Store']?.select?.name || 'Other';
+        const category = props.Category?.select?.name || 'Other';
+        const rawLink = props['Product Link']?.url || '#';
+        const image = props.Image?.url || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80';
+        const status = (props.Status?.select?.name || 'wishlist').toLowerCase();
+
+        let rawPrice = null;
+        const num = parseFloat(price.replace(/[^0-9.]/g, ''));
+        if (!isNaN(num)) rawPrice = num;
+
+        return {
+          id: page.id,
+          notionPageId: page.id,
+          title,
+          secondaryTitle: store !== 'Other' ? `${store} Item` : category,
+          price,
+          rawPrice,
+          currency: price.includes('₹') ? 'INR' : (price.includes('$') ? 'USD' : ''),
+          image,
+          rawLink,
+          store,
+          domain: '',
+          category,
+          status,
+          tone: getTone(title),
+          createdAt: page.created_time || new Date().toISOString()
+        };
+      });
+
+      state.items = notionItems;
+      saveLocalState();
+
+      // Automatically sync any unique categories into collections
+      const existingColNames = new Set(state.collections.map(c => c.name.toLowerCase()));
+      notionItems.forEach(it => {
+        if (it.category && !existingColNames.has(it.category.toLowerCase())) {
+          state.collections.push({
+            id: `col-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            name: it.category,
+            emoji: '✳'
+          });
+          existingColNames.add(it.category.toLowerCase());
+        }
+      });
+      saveLocalState();
+
+      cfg.connected = true;
+      cfg.lastSync = new Date().toISOString();
+      saveNotionConfig(cfg);
+
+      renderCategoryChips();
+      updateCategorySelectOptions();
+      updateStoreOptions();
+      applyFiltersAndRender();
+      updateCartBadge();
+      updateNotionUI();
+
+      if (!opts.silent) {
+        toast(`Synced ${notionItems.length} finds from Notion ✳`);
+      }
+      return true;
+    } catch (err) {
+      console.warn('Notion sync failed:', err);
+      if (!opts.silent) {
+        toast(`Notion sync error: ${err.message}`);
+      }
+      return false;
+    }
+  }
+
+  async function createItemInNotion(item) {
+    const cfg = getNotionConfig();
+    const token = cfg.token || DEFAULT_NOTION_TOKEN;
+    const dbId = (cfg.databaseId || DEFAULT_NOTION_DB_ID).replace(/-/g, '');
+    if (!cfg.connected || !token || !dbId) return null;
+
+    try {
+      const body = {
+        parent: { database_id: dbId },
+        properties: {
+          'Name': {
+            title: [{ text: { content: (item.title || 'Untitled Find').substring(0, 2000) } }]
+          },
+          'Price': {
+            rich_text: [{ text: { content: (item.price || 'Price not listed').substring(0, 2000) } }]
+          },
+          'Store ': {
+            select: { name: (item.store || 'Other').replace(/,/g, '').substring(0, 100) }
+          },
+          'Category': {
+            select: { name: (item.category || 'Other').replace(/,/g, '').substring(0, 100) }
+          },
+          'Product Link': {
+            url: item.rawLink && /^https?:\/\//i.test(item.rawLink) ? item.rawLink : null
+          },
+          'Image': {
+            url: item.image && /^https?:\/\//i.test(item.image) ? item.image : null
+          },
+          'Status': {
+            select: { name: item.status === 'sold-out' ? 'Sold Out' : (item.status === 'cart' ? 'Cart' : 'Wishlist') }
+          }
+        }
+      };
+
+      const res = await callNotionApi('/pages', 'POST', body);
+      if (res && res.id) {
+        item.notionPageId = res.id;
+        saveLocalState();
+        updateNotionUI();
+        return res.id;
+      }
+    } catch (err) {
+      console.warn('Could not create item in Notion:', err.message);
+    }
+    return null;
+  }
+
+  async function deleteItemInNotion(pageId) {
+    const cfg = getNotionConfig();
+    if (!cfg.connected || !pageId) return;
+
+    try {
+      await callNotionApi(`/pages/${pageId}`, 'PATCH', {
+        archived: true
+      });
+      updateNotionUI();
+    } catch (err) {
+      console.warn('Could not archive item in Notion:', err.message);
+    }
+  }
+
+  async function pushLocalToNotion() {
+    const cfg = getNotionConfig();
+    if (!cfg.connected) {
+      toast('Please connect to Notion first');
+      return;
+    }
+
+    const itemsToPush = state.items.filter(it => !it.notionPageId);
+    if (itemsToPush.length === 0) {
+      toast('All finds are already in Notion ✳');
+      return;
+    }
+
+    toast(`Pushing ${itemsToPush.length} finds to Notion...`);
+    let pushed = 0;
+    for (const it of itemsToPush) {
+      const pageId = await createItemInNotion(it);
+      if (pageId) pushed++;
+    }
+    toast(`Pushed ${pushed} finds to Notion ✳`);
+    updateNotionUI();
+  }
+
+  function updateNotionUI() {
+    const cfg = getNotionConfig();
+    const isConn = cfg.connected && !!(cfg.token || DEFAULT_NOTION_TOKEN);
+
+    if (notionHeaderDot) {
+      notionHeaderDot.className = isConn ? 'notion-dot connected' : 'notion-dot';
+    }
+    if (notionBtnLabel) {
+      notionBtnLabel.textContent = isConn ? 'Notion ✳' : 'Notion';
+    }
+
+    if (notionStatusIndicator) {
+      notionStatusIndicator.className = isConn ? 'notion-status-indicator connected' : 'notion-status-indicator';
+    }
+    if (notionStatusTitle) {
+      notionStatusTitle.textContent = isConn ? 'Connected to Notion' : 'Not Connected';
+    }
+    if (notionStatusSubtitle) {
+      const count = state.items.filter(it => !!it.notionPageId).length;
+      notionStatusSubtitle.textContent = isConn
+        ? `Synced with Database (${count || state.items.length} finds loaded)`
+        : 'Connect your Notion database to sync across devices';
+    }
+
+    if (notionOpenDbLink) {
+      notionOpenDbLink.style.display = isConn ? 'inline-block' : 'none';
+      const cleanDb = (cfg.databaseId || DEFAULT_NOTION_DB_ID).replace(/-/g, '');
+      notionOpenDbLink.href = `https://app.notion.com/p/${cleanDb}`;
+    }
+
+    if (notionPushAllBtn) {
+      notionPushAllBtn.style.display = isConn ? 'inline-block' : 'none';
+    }
+    if (notionDisconnectBtn) {
+      notionDisconnectBtn.style.display = isConn ? 'inline-block' : 'none';
+    }
+    if (notionConnectBtn) {
+      notionConnectBtn.textContent = isConn ? 'Re-Sync Now' : 'Connect & Pull Finds';
+    }
+
+    if (notionDbIdInput && (!notionDbIdInput.value || notionDbIdInput.value === '')) {
+      notionDbIdInput.value = cfg.databaseId || DEFAULT_NOTION_DB_ID;
+    }
+    if (notionTokenInput && (!notionTokenInput.value || notionTokenInput.value === '')) {
+      notionTokenInput.value = cfg.token || DEFAULT_NOTION_TOKEN;
+    }
+    if (notionAutoSyncInput) {
+      notionAutoSyncInput.checked = cfg.autoSync !== false;
+    }
+  }
 
   // ==========================================
   // 1. Data Fetching & Sync (Backend + Static Fallback)
@@ -139,6 +465,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadItems() {
+    // 1. Notion Cloud Database Sync (Highest priority when connected)
+    const notionCfg = getNotionConfig();
+    if (notionCfg.connected && notionCfg.autoSync && (notionCfg.token || DEFAULT_NOTION_TOKEN) && notionCfg.databaseId) {
+      const ok = await pullFromNotion({ silent: true });
+      if (ok) {
+        updateNotionUI();
+        return;
+      }
+    }
+
     try {
       const res = await fetch('/api/items');
       if (res.ok) {
@@ -747,6 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
           applyFiltersAndRender();
           updateStoreOptions();
           loadCollections();
+          createItemInNotion(json.item);
           toast('Added to your collection ✳');
           return;
         }
@@ -766,6 +1103,7 @@ document.addEventListener('DOMContentLoaded', () => {
     applyFiltersAndRender();
     updateStoreOptions();
     loadCollections();
+    createItemInNotion(fallbackItem);
     toast('Added to your collection ✳');
   });
 
@@ -1000,6 +1338,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function deleteItem(id) {
     if (!confirm('Remove this find from your list?')) return;
+    const itemToDelete = state.items.find(it => it.id === id);
+    if (itemToDelete && itemToDelete.notionPageId) {
+      deleteItemInNotion(itemToDelete.notionPageId);
+    }
+
     try {
       const res = await fetch(`/api/items/${id}`, { method: 'DELETE' });
       if (res.ok) {
@@ -1273,6 +1616,78 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // ==========================================
+  // Notion Modal Interactions
+  // ==========================================
+  if (notionSyncBtn) {
+    notionSyncBtn.addEventListener('click', () => {
+      updateNotionUI();
+      notionModalBack.classList.add('open');
+    });
+  }
+
+  if (closeNotionModalBtn) {
+    closeNotionModalBtn.addEventListener('click', () => {
+      notionModalBack.classList.remove('open');
+    });
+  }
+
+  if (notionModalBack) {
+    notionModalBack.addEventListener('click', (e) => {
+      if (e.target === notionModalBack) notionModalBack.classList.remove('open');
+    });
+  }
+
+  if (notionConfigForm) {
+    notionConfigForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const dbId = notionDbIdInput.value.trim();
+      const token = notionTokenInput.value.trim();
+      const autoSync = notionAutoSyncInput.checked;
+
+      if (!dbId || !token) {
+        toast('Please enter Database ID and Token');
+        return;
+      }
+
+      const cfg = getNotionConfig();
+      cfg.databaseId = dbId;
+      cfg.token = token;
+      cfg.autoSync = autoSync;
+      cfg.connected = true;
+      saveNotionConfig(cfg);
+
+      notionConnectBtn.disabled = true;
+      notionConnectBtn.textContent = 'Syncing...';
+      const ok = await pullFromNotion();
+      notionConnectBtn.disabled = false;
+      notionConnectBtn.textContent = ok ? 'Re-Sync Now' : 'Connect & Pull Finds';
+      if (ok) {
+        setTimeout(() => {
+          notionModalBack.classList.remove('open');
+        }, 800);
+      }
+    });
+  }
+
+  if (notionPushAllBtn) {
+    notionPushAllBtn.addEventListener('click', async () => {
+      await pushLocalToNotion();
+    });
+  }
+
+  if (notionDisconnectBtn) {
+    notionDisconnectBtn.addEventListener('click', () => {
+      if (confirm('Disconnect Notion database sync? (Your saved items will remain in your browser)')) {
+        const cfg = getNotionConfig();
+        cfg.connected = false;
+        saveNotionConfig(cfg);
+        toast('Notion disconnected');
+        updateNotionUI();
+      }
+    });
+  }
+
   // Keyboard Shortcuts
   window.addEventListener('keydown', (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -1286,6 +1701,7 @@ document.addEventListener('DOMContentLoaded', () => {
       detailModalBack.classList.remove('open');
       searchModalBack.classList.remove('open');
       collectionsModalBack.classList.remove('open');
+      notionModalBack.classList.remove('open');
       cartDrawerOverlay.classList.remove('open');
     }
   });
@@ -1308,6 +1724,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Initial Boot
+  updateNotionUI();
   loadCollections();
   loadItems();
 });

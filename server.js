@@ -399,6 +399,35 @@ app.get('/codex-mockup', (req, res) => {
   res.status(404).send('Codex mockup not found');
 });
 
+// Notion API Proxy for local development
+const axios = require('axios');
+app.all('/api/notion/proxy', async (req, res) => {
+  const endpoint = req.query.endpoint;
+  const token = req.headers['x-notion-token'] || process.env.NOTION_API_KEY;
+  if (!token) {
+    return res.status(401).json({ error: 'Notion token required in x-notion-token header' });
+  }
+  if (!endpoint) {
+    return res.status(400).json({ error: 'Missing endpoint query param' });
+  }
+  try {
+    const notionRes = await axios({
+      method: req.method,
+      url: `https://api.notion.com/v1${endpoint}`,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json'
+      },
+      data: ['POST', 'PATCH', 'PUT'].includes(req.method) ? req.body : undefined
+    });
+    res.json(notionRes.data);
+  } catch (err) {
+    const status = err.response?.status || 500;
+    res.status(status).json(err.response?.data || { error: err.message });
+  }
+});
+
 // Fallback to index.html for SPA feel
 app.use((req, res) => {
   const indexPath = path.join(__dirname, 'public', 'index.html');

@@ -1853,4 +1853,11 @@ document.addEventListener('DOMContentLoaded', () => {
   updateNotionUI();
   loadCollections();
   loadItems();
+
+  // Register PWA Service Worker for mobile installability & offline shell
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
 });

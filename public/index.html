@@ -26,7 +26,7 @@
           <span>Search</span>
           <kbd class="kbd-hint">⌘K</kbd>
         </button>
-        <a href="#collection">Collection</a>
+        <button id="nav-collections-btn" class="nav-btn" title="Manage Collections">Edit Collections</button>
         <button id="notion-sync-btn" class="nav-btn notion-pill-btn" title="Sync with Notion Cloud Database">
           <span class="notion-dot" id="notion-header-dot"></span>
           <span id="notion-btn-label">Notion</span>
@@ -101,10 +101,10 @@
           <div class="categories" id="categories">
             <button class="chip active" data-filter="All">All <span id="all-n">0</span></button>
             <!-- Dynamic collection chips rendered by app.js -->
+            <button type="button" id="manage-collections-btn" class="chip manage-chip" title="Edit Collections">
+              <span>⚙ Edit</span>
+            </button>
           </div>
-          <button type="button" id="manage-collections-btn" class="chip manage-chip" title="Edit Collections">
-            <span>⚙ Edit Collections</span>
-          </button>
 
           <!-- Secondary Filter & Sort controls in DM Mono style -->
           <div class="filter-controls">

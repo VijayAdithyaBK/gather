@@ -22,7 +22,8 @@ document.addEventListener('DOMContentLoaded', () => {
     activeSort: 'newest',
     cart: new Set(initialCart),
     selectedItem: null,
-    pendingExtraction: null
+    pendingExtraction: null,
+    editingItemId: null
   };
 
   // Tone palette for warm editorial card backgrounds
@@ -43,6 +44,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const cartBadgeCount = document.getElementById('cart-badge-count');
   const categoriesEl = document.getElementById('categories');
   const manageCollectionsBtn = document.getElementById('manage-collections-btn');
+  const navCollectionsBtn = document.getElementById('nav-collections-btn');
   const storeSelect = document.getElementById('store-select');
   const sortSelect = document.getElementById('sort-select');
   const urlForm = document.getElementById('url-form');
@@ -353,6 +355,46 @@ document.addEventListener('DOMContentLoaded', () => {
     return null;
   }
 
+  async function updateItemInNotion(item) {
+    const cfg = getNotionConfig();
+    const token = cfg.token || DEFAULT_NOTION_TOKEN;
+    if (!cfg.connected || !token || !item.notionPageId) return null;
+
+    try {
+      const body = {
+        properties: {
+          'Name': {
+            title: [{ text: { content: (item.title || 'Untitled Find').substring(0, 2000) } }]
+          },
+          'Price': {
+            rich_text: [{ text: { content: (item.price || 'Price not listed').substring(0, 2000) } }]
+          },
+          'Store ': {
+            select: { name: (item.store || 'Other').replace(/,/g, '').substring(0, 100) }
+          },
+          'Category': {
+            select: { name: (item.category || 'Other').replace(/,/g, '').substring(0, 100) }
+          },
+          'Product Link': {
+            url: item.rawLink && /^https?:\/\//i.test(item.rawLink) ? item.rawLink : null
+          },
+          'Image': {
+            url: item.image && /^https?:\/\//i.test(item.image) ? item.image : null
+          },
+          'Status': {
+            select: { name: item.status === 'sold-out' ? 'Sold Out' : (item.status === 'cart' ? 'Cart' : 'Wishlist') }
+          }
+        }
+      };
+
+      await callNotionApi(`/pages/${item.notionPageId}`, 'PATCH', body);
+      return item.notionPageId;
+    } catch (err) {
+      console.warn('Could not update item in Notion:', err.message);
+    }
+    return null;
+  }
+
   async function deleteItemInNotion(pageId) {
     const cfg = getNotionConfig();
     if (!cfg.connected || !pageId) return;
@@ -513,37 +555,46 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadCollections() {
+    // 1. Load from localStorage
+    const saved = localStorage.getItem('gather_collections');
+    if (saved) {
+      try {
+        state.collections = JSON.parse(saved);
+      } catch (e) {}
+    }
+    if (!state.collections || state.collections.length === 0) {
+      state.collections = [...DEFAULT_COLLECTIONS];
+    }
+
+    // 2. Merge categories from items (including Notion categories)
+    const existingNames = new Set(state.collections.map(c => c.name.toLowerCase()));
+    state.items.forEach(it => {
+      if (it.category && !existingNames.has(it.category.toLowerCase())) {
+        state.collections.push({
+          id: `col-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          name: it.category,
+          emoji: '✳'
+        });
+        existingNames.add(it.category.toLowerCase());
+      }
+    });
+
+    // 3. Merge server collections if available
     try {
       const res = await fetch('/api/collections');
       if (res.ok) {
         const data = await res.json();
         if (data.success && Array.isArray(data.collections)) {
-          state.collections = data.collections;
-          saveLocalState();
-          renderCategoryChips();
-          updateCategorySelectOptions();
-          renderCollectionsModalList();
-          return;
+          data.collections.forEach(sc => {
+            if (!existingNames.has(sc.name.toLowerCase())) {
+              state.collections.push(sc);
+              existingNames.add(sc.name.toLowerCase());
+            }
+          });
         }
       }
-    } catch (err) {
-      // Backend not accessible
-    }
+    } catch (err) {}
 
-    // Static mode / LocalStorage fallback
-    const saved = localStorage.getItem('gather_collections');
-    if (saved) {
-      try {
-        state.collections = JSON.parse(saved);
-        renderCategoryChips();
-        updateCategorySelectOptions();
-        renderCollectionsModalList();
-        return;
-      } catch (e) {}
-    }
-
-    // Default seed fallback
-    state.collections = [...DEFAULT_COLLECTIONS];
     saveLocalState();
     renderCategoryChips();
     updateCategorySelectOptions();
@@ -578,6 +629,22 @@ document.addEventListener('DOMContentLoaded', () => {
       chip.textContent = col.name;
       categoriesEl.appendChild(chip);
     });
+
+    // Inline Manage Collections Chip
+    const manageChip = document.createElement('button');
+    manageChip.type = 'button';
+    manageChip.id = 'manage-collections-btn';
+    manageChip.className = 'chip manage-chip';
+    manageChip.title = 'Edit Collections';
+    manageChip.innerHTML = '<span>⚙ Edit</span>';
+    manageChip.addEventListener('click', (e) => {
+      e.stopPropagation();
+      renderCollectionsModalList();
+      collectionsModalBack.classList.add('open');
+      newColNameInput.value = '';
+      newColNameInput.focus();
+    });
+    categoriesEl.appendChild(manageChip);
   }
 
   function updateStoreOptions() {
@@ -917,6 +984,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    state.editingItemId = null;
     modalBack.classList.add('open');
     modalLoadingState.classList.remove('hidden');
     modalContentState.classList.add('hidden');
@@ -999,6 +1067,12 @@ document.addEventListener('DOMContentLoaded', () => {
     modalLoadingState.classList.add('hidden');
     modalContentState.classList.remove('hidden');
 
+    if (!state.editingItemId) {
+      if (extractHeading) extractHeading.textContent = 'Review & Save';
+      const submitBtn = productForm.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.textContent = 'Save Find';
+    }
+
     pUrl.value = data.rawLink || '';
     pTitle.value = data.title || '';
     pSubtitle.value = data.secondaryTitle || data.store || '';
@@ -1024,9 +1098,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function openManualAddModal() {
+    state.editingItemId = null;
     modalBack.classList.add('open');
     modalLoadingState.classList.add('hidden');
     modalContentState.classList.remove('hidden');
+
+    if (extractHeading) extractHeading.textContent = 'Add a Find';
+    const submitBtn = productForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Save Find';
 
     pUrl.value = 'https://';
     pTitle.value = '';
@@ -1051,10 +1130,61 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const price = pPrice.value.trim() || 'Price not listed';
+    const num = parseFloat(price.replace(/[^0-9.]/g, ''));
+    const rawPrice = !isNaN(num) ? num : null;
+
+    // === CASE 1: EDITING AN EXISTING ITEM (In-place update, NO duplication!) ===
+    if (state.editingItemId) {
+      const idx = state.items.findIndex(it => it.id === state.editingItemId);
+      if (idx !== -1) {
+        state.items[idx] = {
+          ...state.items[idx],
+          title,
+          secondaryTitle: pSubtitle.value.trim(),
+          price,
+          rawPrice: rawPrice !== null ? rawPrice : state.items[idx].rawPrice,
+          category: pCategory.value,
+          image: pImage.value.trim() || pImagePreview.src,
+          rawLink: pUrl.value.trim() || state.items[idx].rawLink,
+          updatedAt: new Date().toISOString()
+        };
+
+        const updatedItem = state.items[idx];
+
+        // 1. Try local server PUT if running
+        try {
+          await fetch(`/api/items/${state.editingItemId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedItem)
+          });
+        } catch (e) {}
+
+        // 2. Update Notion database page in real time if connected
+        if (updatedItem.notionPageId) {
+          updateItemInNotion(updatedItem);
+        }
+
+        saveLocalState();
+        modalBack.classList.remove('open');
+        state.editingItemId = null;
+        urlInput.value = '';
+        applyFiltersAndRender();
+        updateStoreOptions();
+        loadCollections();
+        toast('Find updated ✳');
+        return;
+      }
+      state.editingItemId = null;
+    }
+
+    // === CASE 2: CREATING A NEW ITEM ===
     const item = {
       title,
       secondaryTitle: pSubtitle.value.trim(),
-      price: pPrice.value.trim() || 'Price not listed',
+      price,
+      rawPrice,
       image: pImage.value.trim() || pImagePreview.src,
       category: pCategory.value,
       rawLink: pUrl.value.trim(),
@@ -1063,9 +1193,6 @@ document.addEventListener('DOMContentLoaded', () => {
       tone: getTone(title),
       status: 'wishlist'
     };
-
-    const num = parseFloat(item.price.replace(/[^0-9.]/g, ''));
-    if (!isNaN(num)) item.rawPrice = num;
 
     try {
       const res = await fetch('/api/items', {
@@ -1116,12 +1243,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // 5. Manage Collections Modal Logic
   // ==========================================
 
-  manageCollectionsBtn.addEventListener('click', () => {
+  function openCollectionsModal() {
     renderCollectionsModalList();
     collectionsModalBack.classList.add('open');
     newColNameInput.value = '';
     newColNameInput.focus();
-  });
+  }
+
+  if (manageCollectionsBtn) {
+    manageCollectionsBtn.addEventListener('click', openCollectionsModal);
+  }
+
+  if (navCollectionsBtn) {
+    navCollectionsBtn.addEventListener('click', openCollectionsModal);
+  }
 
   closeColModalBtn.addEventListener('click', () => {
     collectionsModalBack.classList.remove('open');
@@ -1165,17 +1300,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // Delete button
       row.querySelector('.del-col-btn').addEventListener('click', async () => {
         if (!confirm(`Delete collection "${col.name}"? Items in it will move to "Other".`)) return;
-        try {
-          const res = await fetch(`/api/collections/${col.id}`, { method: 'DELETE' });
-          if (res.ok) {
-            toast(`Collection "${col.name}" deleted`);
-            await loadCollections();
-            await loadItems();
-            return;
-          }
-        } catch (e) {}
 
-        // Fallback for static GitHub Pages / offline
         state.collections = state.collections.filter(c => c.id !== col.id);
         state.items.forEach(it => {
           if ((it.category || '').toLowerCase() === col.name.toLowerCase()) {
@@ -1183,10 +1308,15 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         });
         saveLocalState();
-        toast(`Collection "${col.name}" deleted`);
         renderCollectionsModalList();
         renderCategoryChips();
+        updateCategorySelectOptions();
         applyFiltersAndRender();
+        toast(`Collection "${col.name}" deleted ✳`);
+
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+          fetch(`/api/collections/${col.id}`, { method: 'DELETE' }).catch(() => {});
+        }
       });
 
       collectionsListContainer.appendChild(row);
@@ -1206,26 +1336,11 @@ document.addEventListener('DOMContentLoaded', () => {
     input.focus();
     input.select();
 
-    row.querySelector('.col-edit-inline').addEventListener('submit', async (e) => {
+    row.querySelector('.col-edit-inline').addEventListener('submit', (e) => {
       e.preventDefault();
       const updatedName = input.value.trim();
       if (!updatedName) return;
 
-      try {
-        const res = await fetch(`/api/collections/${col.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: updatedName, emoji: col.emoji })
-        });
-        if (res.ok) {
-          toast(`Renamed to "${updatedName}" ✳`);
-          await loadCollections();
-          await loadItems();
-          return;
-        }
-      } catch (err) {}
-
-      // Fallback
       const oldName = col.name;
       col.name = updatedName;
       state.items.forEach(it => {
@@ -1234,11 +1349,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
       saveLocalState();
-      toast(`Renamed to "${updatedName}" ✳`);
       renderCollectionsModalList();
       renderCategoryChips();
       updateCategorySelectOptions();
       applyFiltersAndRender();
+      toast(`Renamed to "${updatedName}" ✳`);
+
+      if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+        fetch(`/api/collections/${col.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: updatedName, emoji: col.emoji })
+        }).catch(() => {});
+      }
     });
 
     row.querySelector('.cancel-inline-btn').addEventListener('click', () => {
@@ -1246,38 +1369,37 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Add New Collection
-  addCollectionForm.addEventListener('submit', async (e) => {
+  // Add New Collection (Immediate Live UI Update)
+  addCollectionForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const name = newColNameInput.value.trim();
     if (!name) return;
 
-    try {
-      const res = await fetch('/api/collections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, emoji: '✳' })
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success) {
-          newColNameInput.value = '';
-          toast(`Collection "${name}" added ✳`);
-          await loadCollections();
-          return;
-        }
-      }
-    } catch (e) {}
+    // Check duplicate
+    const exists = state.collections.some(c => c.name.toLowerCase() === name.toLowerCase());
+    if (exists) {
+      toast(`Collection "${name}" already exists`);
+      return;
+    }
 
-    // Fallback
     const newCol = { id: `col-${Date.now()}`, name, emoji: '✳' };
     state.collections.push(newCol);
     saveLocalState();
     newColNameInput.value = '';
-    toast(`Collection "${name}" added ✳`);
+
+    // Immediate live updates to both modal list and page chips
     renderCollectionsModalList();
     renderCategoryChips();
     updateCategorySelectOptions();
+    toast(`Collection "${name}" added ✳`);
+
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      fetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCol)
+      }).catch(() => {});
+    }
   });
 
   // ==========================================
@@ -1368,7 +1490,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function openEditModal(item) {
+    state.editingItemId = item.id;
     showReviewForm(item);
+    if (extractHeading) extractHeading.textContent = 'Edit Find';
+    const submitBtn = productForm.querySelector('button[type="submit"]');
+    if (submitBtn) submitBtn.textContent = 'Save Changes';
     modalBack.classList.add('open');
     modalLoadingState.classList.add('hidden');
     modalContentState.classList.remove('hidden');

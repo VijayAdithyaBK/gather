@@ -416,6 +416,96 @@ document.addEventListener('DOMContentLoaded', () => {
     openManualAddModal();
   });
 
+  const SAMPLE_PRESETS = {
+    'B00N9RCNXI': {
+      title: 'STANLEY STMT72794-8 1/4" 46-Piece Square Drive Metric Socket & Bit Set',
+      secondaryTitle: 'Amazon Official Store',
+      price: '₹2,368',
+      rawPrice: 2368,
+      currency: 'INR',
+      image: 'https://m.media-amazon.com/images/I/81a9VNS3eBL._SX679_.jpg',
+      store: 'Amazon',
+      domain: 'amazon.in',
+      category: 'Home'
+    },
+    '1847941834': {
+      title: 'Atomic Habits: Tiny Changes, Remarkable Results by James Clear',
+      secondaryTitle: 'Amazon Official Store',
+      price: '₹284',
+      rawPrice: 284,
+      currency: 'INR',
+      image: 'https://m.media-amazon.com/images/P/1847941834.01._SCLZZZZZZZ_SX500_.jpg',
+      store: 'Amazon',
+      domain: 'amazon.in',
+      category: 'Books'
+    },
+    'itmd3f92': {
+      title: 'FUJIFILM Instax Mini 12 Instant Camera',
+      secondaryTitle: 'Flipkart Official Store',
+      price: '₹6,499',
+      rawPrice: 6499,
+      currency: 'INR',
+      image: 'https://images.unsplash.com/photo-1526170375885-4d8ecf77b99f?w=600&auto=format&fit=crop&q=80',
+      store: 'Flipkart',
+      domain: 'flipkart.com',
+      category: 'Other'
+    },
+    '23849102': {
+      title: 'Nike Dunk Low Retro Men Casual Sneakers',
+      secondaryTitle: 'Nike Official Store',
+      price: '₹8,295',
+      rawPrice: 8295,
+      currency: 'INR',
+      image: 'https://images.unsplash.com/photo-1552346154-21d32810aba3?w=600&auto=format&fit=crop&q=80',
+      store: 'Nike / Myntra',
+      domain: 'myntra.com',
+      category: 'Clothing'
+    },
+    '46519283': {
+      title: 'Polo Ralph Lauren Regular Fit Linen Shirt',
+      secondaryTitle: 'Ajio Official Store',
+      price: '₹14,990',
+      rawPrice: 14990,
+      currency: 'INR',
+      image: 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=600&auto=format&fit=crop&q=80',
+      store: 'Ajio',
+      domain: 'ajio.com',
+      category: 'Clothing'
+    }
+  };
+
+  function extractAmazonAsin(url) {
+    try {
+      const match = url.match(/\/(?:dp|gp\/product|product|asin)\/([A-Z0-9]{10})/i) ||
+                    url.match(/\/([A-Z0-9]{10})(?:[/?#]|$)/i);
+      return match ? match[1].toUpperCase() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function isTitleGeneric(title) {
+    if (!title || typeof title !== 'string') return true;
+    const t = title.trim();
+    if (t.length < 4) return true;
+    if (/^(Amazon(\.in|\.com|\.co\.uk)?|Online Shopping.*|Welcome to.*|Home Page.*|Robot Check|Bot Check|Security Check|403|500|Page Not Found|Site Maintenance|Access Denied|Sorry!.*|Error.*)$/i.test(t)) return true;
+    if (/^Flipkart(\.com)?$/i.test(t)) return true;
+    if (/^Myntra(\.com)?$/i.test(t)) return true;
+    if (/^Ajio(\.com)?$/i.test(t)) return true;
+    return false;
+  }
+
+  async function extractViaMicrolink(url) {
+    try {
+      const res = await fetch(`https://api.microlink.io?url=${encodeURIComponent(url)}&palette=true`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data || null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   function parseFallbackMetadata(url) {
     let domain = 'store.com';
     let storeName = 'Web Store';
@@ -441,16 +531,22 @@ document.addEventListener('DOMContentLoaded', () => {
       let title = '';
       const pathParts = u.pathname.split('/').filter(Boolean);
       for (const part of pathParts) {
-        if (part.length > 4 && !/^(dp|gp|product|p|item|itm|buy|in|en)$/i.test(part) && !/^[A-Z0-9]{10}$/i.test(part)) {
+        if (part.length > 3 && !/^(dp|gp|product|p|item|itm|buy|in|en)$/i.test(part) && !/^[A-Z0-9]{10}$/i.test(part) && !/^\d+$/.test(part)) {
           const cleaned = decodeURIComponent(part)
             .replace(/[-_+]+/g, ' ')
             .replace(/\.(html?|php|aspx?)$/i, '')
             .trim();
-          if (cleaned.length > 3 && !/^\d+$/.test(cleaned)) {
+          if (cleaned.length > 3) {
             title = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
             break;
           }
         }
+      }
+
+      let image = 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80';
+      const asin = extractAmazonAsin(url);
+      if (storeName === 'Amazon' && asin) {
+        image = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_SX500_.jpg`;
       }
 
       return {
@@ -458,7 +554,7 @@ document.addEventListener('DOMContentLoaded', () => {
         secondaryTitle: `${storeName} Official Store`,
         price: '₹ Check Store',
         rawPrice: null,
-        image: 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
+        image,
         rawLink: url,
         store: storeName,
         domain: domain,
@@ -497,6 +593,17 @@ document.addEventListener('DOMContentLoaded', () => {
     scannerBrandTag.textContent = domainName;
     extractHeading.textContent = `Gathering from ${domainName}...`;
 
+    // 1. Check quick sample preset for instant 1-click test experience
+    for (const [key, preset] of Object.entries(SAMPLE_PRESETS)) {
+      if (url.includes(key)) {
+        setTimeout(() => {
+          showReviewForm({ ...preset, rawLink: url });
+        }, 350);
+        return;
+      }
+    }
+
+    // 2. Try Backend API first (if local server is running)
     try {
       const res = await fetch('/api/extract', {
         method: 'POST',
@@ -506,13 +613,44 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (res.ok) {
         const json = await res.json();
-        if (json.success && json.data) {
+        if (json.success && json.data && !isTitleGeneric(json.data.title)) {
           showReviewForm(json.data);
           return;
         }
       }
-      throw new Error('Extraction fallback needed');
-    } catch (err) {
+    } catch (err) {}
+
+    // 3. Client-side extraction via Microlink + Smart heuristics (GitHub Pages / Standalone)
+    try {
+      const mlData = await extractViaMicrolink(url);
+      const fallback = parseFallbackMetadata(url);
+
+      let finalTitle = fallback.title;
+      if (mlData?.title && !isTitleGeneric(mlData.title)) {
+        finalTitle = mlData.title;
+      }
+
+      let finalImage = fallback.image;
+      if (mlData?.image?.url && !mlData.image.url.includes('logo') && !mlData.image.url.includes('sprite') && !mlData.image.url.includes('prime')) {
+        finalImage = mlData.image.url;
+      }
+      const asin = extractAmazonAsin(url);
+      if (asin) {
+        finalImage = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_SX500_.jpg`;
+      }
+
+      showReviewForm({
+        title: finalTitle,
+        secondaryTitle: mlData?.publisher || fallback.secondaryTitle,
+        price: fallback.price || '₹ Check Store',
+        rawPrice: fallback.rawPrice,
+        image: finalImage,
+        rawLink: url,
+        store: fallback.store,
+        domain: fallback.domain,
+        category: fallback.category
+      });
+    } catch (e) {
       const fallbackData = parseFallbackMetadata(url);
       showReviewForm(fallbackData);
       toast('Review details below before saving');

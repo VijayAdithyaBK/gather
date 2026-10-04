@@ -146,20 +146,25 @@ function deriveTitleFromUrl(url) {
     // Look for product slug part
     let candidate = '';
     for (let part of parts) {
-      if (part === 'dp' || part === 'p' || part === 'product' || part === 'item' || part === 'buy') continue;
-      if (/^[A-Z0-9]{10}$/i.test(part) || /^itm[a-z0-9]+$/i.test(part)) continue; // ASIN or Flipkart item ID
+      if (/^(dp|p|product|item|itm|buy|in|en|gp)$/i.test(part)) continue;
+      if (/^[A-Z0-9]{10}$/i.test(part) || /^itm[a-z0-9]+$/i.test(part) || /^\d+$/i.test(part)) continue;
       if (part.length > candidate.length) {
         candidate = part;
       }
     }
 
     if (!candidate && parts.length > 0) {
-      candidate = parts[parts.length - 1];
+      for (let i = parts.length - 1; i >= 0; i--) {
+        if (!/^(buy|p|dp|\d+)$/i.test(parts[i])) {
+          candidate = parts[i];
+          break;
+        }
+      }
     }
 
     if (candidate) {
       const words = decodeURIComponent(candidate)
-        .replace(/[-_+]/g, ' ')
+        .replace(/[-_+]+/g, ' ')
         .replace(/\.[a-z0-9]+$/i, '')
         .split(' ')
         .filter(w => w.length > 0)
@@ -168,6 +173,36 @@ function deriveTitleFromUrl(url) {
     }
   } catch (e) {}
   return 'Curated Wishlist Item';
+}
+
+function isTitleGeneric(title) {
+  if (!title || typeof title !== 'string') return true;
+  const t = title.trim();
+  if (t.length < 4) return true;
+  if (/^(Amazon(\.in|\.com|\.co\.uk)?|Online Shopping.*|Welcome to.*|Home Page.*|Robot Check|Bot Check|Security Check|403|500|Page Not Found|Site Maintenance|Access Denied|Sorry!.*|Error.*)$/i.test(t)) return true;
+  if (/^Flipkart(\.com)?$/i.test(t)) return true;
+  if (/^Myntra(\.com)?$/i.test(t)) return true;
+  if (/^Ajio(\.com)?$/i.test(t)) return true;
+  return false;
+}
+
+function extractAmazonAsin(url) {
+  try {
+    const match = url.match(/\/(?:dp|gp\/product|product|asin)\/([A-Z0-9]{10})/i) ||
+                  url.match(/\/([A-Z0-9]{10})(?:[/?#]|$)/i);
+    return match ? match[1].toUpperCase() : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function isValidProductImage(src) {
+  if (!src || typeof src !== 'string') return false;
+  const s = src.toLowerCase();
+  if (s.includes('fls-eu') || s.includes('fls-na') || s.includes('uedata') || s.includes('sprite') || s.includes('icon') || s.includes('logo') || s.includes('pixel') || s.includes('1x1') || s.includes('beacon') || s.includes('tracking') || s.includes('prime_logo')) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -549,10 +584,13 @@ async function extractProductInfo(rawUrl) {
     }
 
     let foundImg = siteData.image || jsonLd.image || og.image;
+    if (foundImg && !isValidProductImage(foundImg)) {
+      foundImg = null;
+    }
     if (!foundImg) {
       $('img').each((_, el) => {
         const src = $(el).attr('src') || $(el).attr('data-src');
-        if (src && !foundImg && !src.includes('sprite') && !src.includes('icon') && !src.includes('logo') && !src.includes('banner')) {
+        if (src && !foundImg && isValidProductImage(src)) {
           foundImg = src;
         }
       });
@@ -562,48 +600,59 @@ async function extractProductInfo(rawUrl) {
     }
   }
 
-  // Check if title is generic homepage or error title
-  const isGenericTitle = !extracted.title ||
-    /^(Online Shopping India|Amazon\.com|Welcome to|Home Page|Loading\.\.\.|Access Denied|403|500)/i.test(extracted.title);
+  // Check Amazon ASIN
+  const asin = extractAmazonAsin(url);
+  if (store.name === 'Amazon' && asin && (!extracted.image || !isValidProductImage(extracted.image))) {
+    extracted.image = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_SX500_.jpg`;
+  }
 
-  // Step 3: If direct fetch failed or gave poor data, try Jina / Microlink proxies
-  if (isGenericTitle || !extracted.image || !extracted.price) {
+  // Check if title is generic homepage or bot challenge
+  let genericTitle = isTitleGeneric(extracted.title);
+
+  // Step 3: If direct fetch gave generic title or poor data, try proxies
+  if (genericTitle || !extracted.image || !isValidProductImage(extracted.image) || !extracted.price) {
     console.log(`[Scraper] Querying proxy fallbacks for ${url}...`);
 
-    // Try Jina Reader
-    const jinaData = await fetchFromJina(url);
-    if (jinaData) {
-      if (isGenericTitle && jinaData.title && !jinaData.title.includes('Warning: Target URL returned error')) {
-        extracted.title = cleanTitle(jinaData.title);
+    // Try Microlink first
+    const microlink = await fetchFromMicrolink(url);
+    if (microlink) {
+      if (genericTitle && microlink.title && !isTitleGeneric(microlink.title)) {
+        extracted.title = cleanTitle(microlink.title);
+        genericTitle = false;
       }
-      if (!extracted.image && jinaData.image && !jinaData.image.includes('logo')) {
-        extracted.image = jinaData.image;
+      if ((!extracted.image || !isValidProductImage(extracted.image)) && microlink.image && isValidProductImage(microlink.image)) {
+        extracted.image = microlink.image;
       }
-      if (!extracted.price && jinaData.price) {
-        extracted.price = jinaData.price;
+      if (!extracted.secondaryTitle && microlink.siteName) {
+        extracted.secondaryTitle = microlink.siteName;
       }
     }
 
-    // Try Microlink
-    if (isGenericTitle || !extracted.image) {
-      const microlink = await fetchFromMicrolink(url);
-      if (microlink) {
-        if (isGenericTitle && microlink.title) {
-          extracted.title = cleanTitle(microlink.title);
+    // Try Jina Reader
+    if (genericTitle || !extracted.price) {
+      const jinaData = await fetchFromJina(url);
+      if (jinaData) {
+        if (genericTitle && jinaData.title && !isTitleGeneric(jinaData.title)) {
+          extracted.title = cleanTitle(jinaData.title);
+          genericTitle = false;
         }
-        if (!extracted.image && microlink.image) {
-          extracted.image = microlink.image;
+        if ((!extracted.image || !isValidProductImage(extracted.image)) && jinaData.image && isValidProductImage(jinaData.image)) {
+          extracted.image = jinaData.image;
         }
-        if (!extracted.secondaryTitle && microlink.siteName) {
-          extracted.secondaryTitle = microlink.siteName;
+        if (!extracted.price && jinaData.price) {
+          extracted.price = jinaData.price;
         }
       }
     }
   }
 
   // Step 4: Fallback cleanup if still generic
-  if (!extracted.title || /^(Online Shopping India|Welcome to|Home Page|403|500)/i.test(extracted.title)) {
+  if (isTitleGeneric(extracted.title)) {
     extracted.title = deriveTitleFromUrl(url);
+  }
+
+  if (store.name === 'Amazon' && asin && (!extracted.image || !isValidProductImage(extracted.image))) {
+    extracted.image = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_SX500_.jpg`;
   }
 
   if (!extracted.secondaryTitle) {

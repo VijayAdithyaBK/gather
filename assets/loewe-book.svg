@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <filter id="bookShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="2" dy="10" stdDeviation="10" flood-opacity="0.2"/>
+    </filter>
+  </defs>
+  <g filter="url(#bookShadow)">
+    <!-- Book cover textured yellow -->
+    <rect x="110" y="50" width="180" height="280" rx="3" fill="#E6A63E" stroke="#5C3E14" stroke-width="1.5"/>
+    <rect x="110" y="50" width="14" height="280" rx="2" fill="#D2922D"/>
+    <!-- LOEWE Anagram style flourishes -->
+    <path d="M140 100 C155 70, 185 70, 200 95 C215 120, 250 80, 260 110" fill="none" stroke="#222" stroke-width="3" stroke-linecap="round"/>
+    <path d="M145 130 C170 120, 190 150, 230 135" fill="none" stroke="#222" stroke-width="3" stroke-linecap="round"/>
+    <!-- Editorial portrait silhouette -->
+    <circle cx="200" cy="200" r="45" fill="#F4C7A3" opacity="0.9"/>
+    <!-- Red heart sticker on lips/cheek -->
+    <path d="M195 215 C195 200, 175 195, 175 210 C175 225, 195 235, 195 240 C195 235, 215 225, 215 210 C215 195, 195 200, 195 215 Z" fill="#E62E2E"/>
+    <!-- Book typography -->
+    <text x="200" y="80" font-family="Helvetica, Arial, sans-serif" font-weight="900" font-size="14" text-anchor="middle" letter-spacing="4" fill="#111">EYE / LOEWE / YOU</text>
+  </g>
+</svg>

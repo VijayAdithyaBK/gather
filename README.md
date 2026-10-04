@@ -35,14 +35,22 @@ An editorial-grade, universal wishlist aggregator web application featuring the 
 
 ---
 
+## 🌐 Live GitHub Pages Demo
+
+The application is deployed on GitHub Pages:
+👉 **[https://vijayadithyabk.github.io/gather/](https://vijayadithyabk.github.io/gather/)**
+
+---
+
 ## 🚀 How to Run Locally
 
-The server is running live at:
+The backend scraper & API server runs locally at:
 👉 **[http://localhost:3000](http://localhost:3000)**
 
 To run or restart the server manually:
 
 ```powershell
-cd "C:\Users\vijay\.gemini\antigravity-ide\scratch\universal-wishlist"
+cd "C:\Users\vijay\.gemini\antigravity-ide\scratch\gather"
 npm start
 ```
+

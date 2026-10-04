@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <filter id="coletteShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="2" dy="8" stdDeviation="8" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <g filter="url(#coletteShadow)">
+    <rect x="120" y="55" width="160" height="270" rx="2" fill="#EAE3D2" stroke="#222" stroke-width="1.5"/>
+    <!-- Purple Header Box -->
+    <rect x="130" y="70" width="140" height="40" fill="#5F6B58"/>
+    <rect x="133" y="73" width="134" height="34" fill="#6C4B63"/>
+    <text x="200" y="96" font-family="'Times New Roman', serif" font-weight="bold" font-size="15" text-anchor="middle" fill="#E8D1B5" letter-spacing="3">COLETTE</text>
+    <!-- Portrait Illustration Sketch -->
+    <circle cx="200" cy="180" r="45" fill="none" stroke="#6C4B63" stroke-width="1.5"/>
+    <path d="M185 160 C190 150, 210 150, 215 160" stroke="#6C4B63" stroke-width="1.5" fill="none"/>
+    <path d="M190 180 Q200 190 210 180" stroke="#6C4B63" stroke-width="1.5" fill="none"/>
+  </g>
+</svg>

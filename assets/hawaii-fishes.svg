@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400" width="100%" height="100%">
+  <defs>
+    <filter id="fishShadow" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="2" dy="8" stdDeviation="8" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+  <g filter="url(#fishShadow)">
+    <rect x="110" y="50" width="180" height="280" rx="2" fill="#F4EFE6" stroke="#D3C7B5" stroke-width="1.5"/>
+    <text x="200" y="80" font-family="Georgia, serif" font-style="italic" font-size="9" text-anchor="middle" fill="#666">THE MANY-SPLENDORED</text>
+    <text x="200" y="93" font-family="Georgia, serif" font-weight="bold" font-size="11" text-anchor="middle" fill="#222">FISHES OF HAWAII</text>
+    <!-- Fish 1 (Green/Orange) -->
+    <path d="M140 130 C165 115, 210 115, 235 130 C250 120, 260 140, 245 135 C230 145, 160 145, 140 130 Z" fill="#E89B38"/>
+    <!-- Fish 2 (Blue Reef) -->
+    <path d="M150 170 C180 155, 230 155, 255 170 C270 160, 275 180, 265 175 C245 185, 180 185, 150 170 Z" fill="#3D779C"/>
+    <!-- Fish 3 (Yellow Tang) -->
+    <circle cx="170" cy="220" r="22" fill="#F2C94C"/>
+    <polygon points="190,215 205,205 205,225" fill="#F2C94C"/>
+    <!-- Fish 4 (Koi / Red Pattern) -->
+    <path d="M170 270 C195 255, 240 255, 260 270 C270 260, 275 275, 265 273 C245 282, 190 282, 170 270 Z" fill="#EB5757"/>
+    <circle cx="190" cy="268" r="4" fill="#FFF"/>
+  </g>
+</svg>

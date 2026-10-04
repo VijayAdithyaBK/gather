@@ -1,0 +1,32 @@
+[
+  {
+    "id": "col-clothing",
+    "name": "Clothing",
+    "emoji": "👔"
+  },
+  {
+    "id": "col-bags",
+    "name": "Bags",
+    "emoji": "👜"
+  },
+  {
+    "id": "col-accessories",
+    "name": "Accessories",
+    "emoji": "💍"
+  },
+  {
+    "id": "col-home",
+    "name": "Home",
+    "emoji": "🏺"
+  },
+  {
+    "id": "col-books",
+    "name": "Books",
+    "emoji": "📖"
+  },
+  {
+    "id": "col-other",
+    "name": "Other",
+    "emoji": "✳"
+  }
+]

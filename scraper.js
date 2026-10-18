@@ -49,7 +49,14 @@ function normalizeUrl(inputUrl) {
 function identifyStore(url) {
   try {
     const domain = new URL(url).hostname.toLowerCase().replace(/^www\./, '');
-    if (domain.includes('amazon')) return { name: 'Amazon', domain, color: '#FF9900' };
+    if (domain.includes('amazon') || domain.includes('amzn.') || domain === 'a.co') {
+      const isIndia = domain.includes('.in');
+      return { 
+        name: 'Amazon', 
+        domain: isIndia ? 'amazon.in' : (domain.includes('.com') ? 'amazon.com' : domain), 
+        color: '#FF9900' 
+      };
+    }
     if (domain.includes('flipkart')) return { name: 'Flipkart', domain, color: '#2874F0' };
     if (domain.includes('ajio')) return { name: 'Ajio', domain, color: '#2C4152' };
     if (domain.includes('myntra')) return { name: 'Myntra', domain, color: '#FF3F6C' };
@@ -276,20 +283,41 @@ function extractSiteSpecific($, url) {
   const res = { title: null, price: null, currency: null, image: null, secondaryTitle: null };
 
   // 1. AMAZON
-  if (hostname.includes('amazon')) {
-    const titleEl = $('#productTitle, #title, #ebooksProductTitle');
+  if (hostname.includes('amazon') || hostname.includes('amzn.') || hostname === 'a.co') {
+    const titleEl = $('#productTitle, #title, #ebooksProductTitle, h1.a-size-large').first();
     if (titleEl.length) res.title = cleanTitle(titleEl.text());
 
-    const priceWhole = $('.priceToPay .a-price-whole, .apexPriceToPay .a-price-whole').first().text().replace(/[^\d]/g, '');
+    // Primary modern price selectors
+    const priceWhole = $('.priceToPay .a-price-whole, .apexPriceToPay .a-price-whole, #corePriceDisplay_desktop_feature_div .priceToPay .a-price-whole').first().text().replace(/[^\d]/g, '');
     const priceFraction = $('.priceToPay .a-price-fraction, .apexPriceToPay .a-price-fraction').first().text().replace(/[^\d]/g, '');
-    const priceOffscreen = $('.a-price .a-offscreen, #priceblock_ourprice, #priceblock_dealprice, #corePrice_desktop .a-offscreen').first().text().trim();
+
+    // Offscreen and alternative price containers
+    let priceOffscreen = $(
+      '#corePriceDisplay_desktop_feature_div .a-price.priceToPay .a-offscreen, ' +
+      '.priceToPay .a-offscreen, ' +
+      '.apexPriceToPay .a-offscreen, ' +
+      '#corePrice_desktop .a-offscreen, ' +
+      '#priceblock_ourprice, ' +
+      '#priceblock_dealprice, ' +
+      '#priceblock_saleprice, ' +
+      '#actualPriceValue'
+    ).first().text().trim();
+
+    if (!priceOffscreen) {
+      $('.a-price .a-offscreen').each((_, el) => {
+        const txt = $(el).text().trim();
+        if (txt && /[₹$€£₩¥\d]/.test(txt) && !priceOffscreen) {
+          priceOffscreen = txt;
+        }
+      });
+    }
 
     if (priceWhole) {
       res.price = priceFraction ? `${priceWhole}.${priceFraction}` : priceWhole;
-      res.currency = hostname.includes('.in') ? 'INR' : 'USD';
+      res.currency = (hostname.includes('.in') || (priceOffscreen && priceOffscreen.includes('₹'))) ? 'INR' : 'USD';
     } else if (priceOffscreen) {
       res.price = priceOffscreen;
-      if (priceOffscreen.includes('₹')) res.currency = 'INR';
+      if (priceOffscreen.includes('₹') || hostname.includes('.in')) res.currency = 'INR';
       else if (priceOffscreen.includes('$')) res.currency = 'USD';
       else if (priceOffscreen.includes('£')) res.currency = 'GBP';
       else if (priceOffscreen.includes('€')) res.currency = 'EUR';
@@ -490,22 +518,28 @@ async function fetchFromJina(url) {
  */
 function guessCategory(title = '', store = '') {
   const text = (title + ' ' + store).toLowerCase();
+  if (/\b(helmet|helmets|visor|peak|motocross)\b/i.test(text)) {
+    return 'Helmets';
+  }
+  if (/\b(tank bag|saddlebag|tail bag|pannier|luggage|storage|backpack)\b/i.test(text)) {
+    return 'Bike storage';
+  }
+  if (/\b(riding|glove|gloves|knee guard|elbow guard|jacket|armor|mount|holder|fog light|windshield|exhaust|crash guard)\b/i.test(text)) {
+    return 'Bike Accessories';
+  }
+  if (/\b(socket|wrench|driver|drill|tools?|spanner|plier|pliers|hardware)\b/i.test(text)) {
+    return 'Tools';
+  }
+  if (/\b(candle|vase|sculpture|tree|lamp|table|chair|mug|cup|decor|object|art)\b/i.test(text)) {
+    return 'Home';
+  }
   if (/\b(book|magazine|novel|paper|catalog|read|journal|guide|fact|hardcover|paperback|author|edition)\b/i.test(text)) {
-    return 'READ';
-  }
-  if (/\b(bag|tote|backpack|handbag|wallet|purse|duffle|luggage|clutch)\b/i.test(text)) {
-    return 'BAGS';
-  }
-  if (/\b(hat|cap|necklace|ring|earring|bracelet|sunglasses|watch|belt|jewel|jewelry|scarf|socks|eyewear)\b/i.test(text)) {
-    return 'ACCESSORIES';
+    return 'Books';
   }
   if (/\b(shirt|tee|t-shirt|pants|trousers|dress|hoodie|sweatshirt|jeans|skirt|saree|kurta|clothing|apparel|footwear|sneakers|shoes|boots)\b/i.test(text)) {
-    return 'CLOTHING';
+    return 'Clothing';
   }
-  if (/\b(candle|vase|sculpture|tree|lamp|table|chair|mug|cup|decor|object|art|gadget|camera|headphones|audio|tool|tools|socket|drill|driver|hardware|electronics|set)\b/i.test(text)) {
-    return 'OBJECTS';
-  }
-  return 'OBJECTS';
+  return 'Other';
 }
 
 /**
@@ -513,7 +547,7 @@ function guessCategory(title = '', store = '') {
  */
 async function extractProductInfo(rawUrl) {
   const url = normalizeUrl(rawUrl);
-  const store = identifyStore(url);
+  let store = identifyStore(url);
 
   let extracted = {
     title: '',
@@ -526,31 +560,65 @@ async function extractProductInfo(rawUrl) {
     store: store.name,
     domain: store.domain,
     storeColor: store.color,
-    category: 'OBJECTS',
+    category: 'Other',
     extractedAt: new Date().toISOString()
   };
 
   let html = null;
   let responseUrl = url;
 
-  // Step 1: Direct Fetch with browser emulation
+  // Step 1: Direct Fetch using native fetch with redirect follow and 20s timeout
   try {
-    const response = await axios.get(url, {
-      headers: {
-        ...DEFAULT_HEADERS,
-        'Referer': 'https://www.google.com/',
-        'Host': new URL(url).host
-      },
-      timeout: 10000,
-      maxRedirects: 5,
-      validateStatus: (status) => status < 400
+    const fetchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'en-IN,en-US;q=0.9,en;q=0.8',
+      'Cache-Control': 'no-cache',
+      'Pragma': 'no-cache'
+    };
+
+    const res = await fetch(url, {
+      headers: fetchHeaders,
+      redirect: 'follow',
+      signal: AbortSignal.timeout(20000)
     });
-    html = response.data;
-    if (response.request?.res?.responseUrl) {
-      responseUrl = response.request.res.responseUrl;
+
+    if (res.ok) {
+      html = await res.text();
+      if (res.url) {
+        responseUrl = res.url;
+        store = identifyStore(responseUrl);
+        extracted.store = store.name;
+        extracted.domain = store.domain;
+        extracted.storeColor = store.color;
+        extracted.rawLink = responseUrl;
+      }
     }
   } catch (directErr) {
-    console.log(`[Scraper] Direct fetch failed for ${url}: ${directErr.message}`);
+    console.log(`[Scraper] Native fetch failed for ${url}: ${directErr.message}, falling back to axios`);
+    try {
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-IN,en;q=0.9'
+        },
+        timeout: 15000,
+        maxRedirects: 5,
+        validateStatus: (status) => status < 400
+      });
+      html = response.data;
+      if (response.request?.res?.responseUrl) {
+        responseUrl = response.request.res.responseUrl;
+        store = identifyStore(responseUrl);
+        extracted.store = store.name;
+        extracted.domain = store.domain;
+        extracted.storeColor = store.color;
+        extracted.rawLink = responseUrl;
+      }
+    } catch (axiosErr) {
+      console.log(`[Scraper] Axios fallback also failed for ${url}: ${axiosErr.message}`);
+    }
   }
 
   // Step 2: Parse Direct HTML
@@ -578,8 +646,9 @@ async function extractProductInfo(rawUrl) {
     }
 
     if (rawPrice) {
-      extracted.rawPrice = rawPrice;
-      extracted.currency = curr || (store.name === 'Flipkart' || store.name === 'Ajio' || store.name === 'Myntra' ? 'INR' : '');
+      const numPrice = typeof rawPrice === 'number' ? rawPrice : parseFloat(String(rawPrice).replace(/[^0-9.]/g, ''));
+      extracted.rawPrice = !isNaN(numPrice) ? numPrice : null;
+      extracted.currency = curr || (store.name === 'Flipkart' || store.name === 'Ajio' || store.name === 'Myntra' || (responseUrl.includes('.in')) ? 'INR' : '');
       extracted.price = formatPrice(rawPrice, extracted.currency) || String(rawPrice);
     }
 
@@ -600,8 +669,8 @@ async function extractProductInfo(rawUrl) {
     }
   }
 
-  // Check Amazon ASIN
-  const asin = extractAmazonAsin(url);
+  // Check Amazon ASIN (checking both responseUrl and original url)
+  const asin = extractAmazonAsin(responseUrl) || extractAmazonAsin(url);
   if (store.name === 'Amazon' && asin && (!extracted.image || !isValidProductImage(extracted.image))) {
     extracted.image = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_SX500_.jpg`;
   }
@@ -614,7 +683,7 @@ async function extractProductInfo(rawUrl) {
     console.log(`[Scraper] Querying proxy fallbacks for ${url}...`);
 
     // Try Microlink first
-    const microlink = await fetchFromMicrolink(url);
+    const microlink = await fetchFromMicrolink(responseUrl !== url ? responseUrl : url);
     if (microlink) {
       if (genericTitle && microlink.title && !isTitleGeneric(microlink.title)) {
         extracted.title = cleanTitle(microlink.title);
@@ -630,7 +699,7 @@ async function extractProductInfo(rawUrl) {
 
     // Try Jina Reader
     if (genericTitle || !extracted.price) {
-      const jinaData = await fetchFromJina(url);
+      const jinaData = await fetchFromJina(responseUrl !== url ? responseUrl : url);
       if (jinaData) {
         if (genericTitle && jinaData.title && !isTitleGeneric(jinaData.title)) {
           extracted.title = cleanTitle(jinaData.title);
@@ -641,6 +710,8 @@ async function extractProductInfo(rawUrl) {
         }
         if (!extracted.price && jinaData.price) {
           extracted.price = jinaData.price;
+          const num = parseFloat(String(jinaData.price).replace(/[^0-9.]/g, ''));
+          if (!isNaN(num)) extracted.rawPrice = num;
         }
       }
     }
@@ -648,7 +719,7 @@ async function extractProductInfo(rawUrl) {
 
   // Step 4: Fallback cleanup if still generic
   if (isTitleGeneric(extracted.title)) {
-    extracted.title = deriveTitleFromUrl(url);
+    extracted.title = deriveTitleFromUrl(responseUrl !== url ? responseUrl : url);
   }
 
   if (store.name === 'Amazon' && asin && (!extracted.image || !isValidProductImage(extracted.image))) {

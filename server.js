@@ -8,6 +8,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, 'data', 'wishlist.json');
 
+process.on('uncaughtException', (err) => {
+  console.error('[Server Error] Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Server Error] Unhandled Rejection:', reason);
+});
+
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -256,23 +263,27 @@ app.post('/api/items', (req, res) => {
 
   const items = getItems();
   const id = `item-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-  const itemToSave = {
-    id,
-    title: newItem.title,
-    secondaryTitle: newItem.secondaryTitle || '',
-    price: newItem.price || 'Check Store',
-    rawPrice: newItem.rawPrice !== undefined ? newItem.rawPrice : null,
-    currency: newItem.currency || '',
-    image: newItem.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
-    rawLink: newItem.rawLink || '#',
-    store: newItem.store || 'Store',
-    domain: newItem.domain || '',
-    storeColor: newItem.storeColor || '#111111',
-    category: (newItem.category || 'OBJECTS').toUpperCase(),
-    status: newItem.status || 'wishlist',
-    notes: newItem.notes || '',
-    createdAt: new Date().toISOString()
-  };
+    const parsedRaw = newItem.rawPrice !== undefined && newItem.rawPrice !== null 
+      ? Number(newItem.rawPrice) 
+      : (parseFloat(String(newItem.price || '').replace(/[^0-9.]/g, '')) || null);
+
+    const itemToSave = {
+      id,
+      title: newItem.title,
+      secondaryTitle: newItem.secondaryTitle || '',
+      price: newItem.price || 'Check Store',
+      rawPrice: !isNaN(parsedRaw) ? parsedRaw : null,
+      currency: newItem.currency || '',
+      image: newItem.image || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=600&auto=format&fit=crop&q=80',
+      rawLink: newItem.rawLink || '#',
+      store: newItem.store || 'Store',
+      domain: newItem.domain || '',
+      storeColor: newItem.storeColor || '#111111',
+      category: newItem.category || 'Other',
+      status: newItem.status || 'wishlist',
+      notes: newItem.notes || '',
+      createdAt: new Date().toISOString()
+    };
 
   items.unshift(itemToSave);
   saveItems(items);
@@ -403,9 +414,23 @@ app.get('/codex-mockup', (req, res) => {
 const axios = require('axios');
 app.all('/api/notion/proxy', async (req, res) => {
   const endpoint = req.query.endpoint;
-  const token = req.headers['x-notion-token'] || process.env.NOTION_API_KEY;
+  let token = req.headers['x-notion-token'] || process.env.NOTION_API_KEY;
   if (!token) {
-    return res.status(401).json({ error: 'Notion token required in x-notion-token header' });
+    try {
+      const userProfile = process.env.USERPROFILE || 'C:\\Users\\vijay';
+      const mcpPath = path.resolve(userProfile, '.gemini', 'config', 'mcp_config.json');
+      if (fs.existsSync(mcpPath)) {
+        const mcpConfig = JSON.parse(fs.readFileSync(mcpPath, 'utf8'));
+        const headersRaw = mcpConfig.mcpServers?.['notion-mcp-server']?.env?.OPENAPI_MCP_HEADERS;
+        if (headersRaw) {
+          const parsed = JSON.parse(headersRaw);
+          if (parsed.Authorization) token = parsed.Authorization.replace(/^Bearer\s+/i, '').trim();
+        }
+      }
+    } catch (e) {}
+  }
+  if (!token) {
+    return res.status(401).json({ error: 'Missing Notion API token. Provide x-notion-token header or set NOTION_API_KEY environment variable.' });
   }
   if (!endpoint) {
     return res.status(400).json({ error: 'Missing endpoint query param' });

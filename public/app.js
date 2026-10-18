@@ -916,7 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const u = new URL(url);
       domain = u.hostname.replace(/^www\./, '');
       const dLower = domain.toLowerCase();
-      if (dLower.includes('amazon')) storeName = 'Amazon';
+      if (dLower.includes('amazon') || dLower.includes('amzn.') || dLower === 'a.co') storeName = 'Amazon';
       else if (dLower.includes('flipkart')) storeName = 'Flipkart';
       else if (dLower.includes('myntra')) storeName = 'Myntra';
       else if (dLower.includes('ajio')) storeName = 'Ajio';

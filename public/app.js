@@ -887,11 +887,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function cleanTitle(raw) {
+    if (!raw) return '';
+    return raw.replace(/\s+/g, ' ')
+      .replace(/\s*[:|–—-]\s*(Amazon\.in|Amazon\.com|Flipkart\.com|Ajio|Myntra|Buy Online at Best Price.*)$/i, '')
+      .replace(/\s*\|\s*.*$/, '')
+      .trim();
+  }
+
+  function guessCategory(title = '', store = '') {
+    const text = (title + ' ' + store).toLowerCase();
+    if (/\b(helmet|helmets|visor|peak|motocross)\b/i.test(text)) return 'Helmets';
+    if (/\b(tank bag|saddlebag|tail bag|pannier|luggage|storage|backpack)\b/i.test(text)) return 'Bike storage';
+    if (/\b(riding|glove|gloves|knee guard|elbow guard|jacket|armor|mount|holder|fog light|windshield|exhaust|crash guard)\b/i.test(text)) return 'Bike Accessories';
+    if (/\b(socket|wrench|driver|drill|tools?|spanner|plier|pliers|hardware)\b/i.test(text)) return 'Tools';
+    if (/\b(candle|vase|sculpture|tree|lamp|table|chair|mug|cup|decor|object|art)\b/i.test(text)) return 'Home';
+    if (/\b(book|magazine|novel|paper|catalog|read|journal|guide|fact|hardcover|paperback|author|edition)\b/i.test(text)) return 'Books';
+    if (/\b(shirt|tee|t-shirt|pants|trousers|dress|hoodie|sweatshirt|jeans|skirt|saree|kurta|clothing|apparel|footwear|sneakers|shoes|boots)\b/i.test(text)) return 'Clothing';
+    return 'Other';
+  }
+
   function isTitleGeneric(title) {
     if (!title || typeof title !== 'string') return true;
     const t = title.trim();
     if (t.length < 4) return true;
-    if (/^(Amazon(\.in|\.com|\.co\.uk)?|Online Shopping.*|Welcome to.*|Home Page.*|Robot Check|Bot Check|Security Check|403|500|Page Not Found|Site Maintenance|Access Denied|Sorry!.*|Error.*)$/i.test(t)) return true;
+    if (/^(Amazon(\.in|\.com|\.co\.uk)?|Online Shopping.*|Welcome to.*|Home Page.*|Robot Check|Bot Check|Security Check|Product gallery|403|500|Page Not Found|Site Maintenance|Access Denied|Sorry!.*|Error.*)$/i.test(t)) return true;
     if (/^Flipkart(\.com)?$/i.test(t)) return true;
     if (/^Myntra(\.com)?$/i.test(t)) return true;
     if (/^Ajio(\.com)?$/i.test(t)) return true;
@@ -1007,7 +1027,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. Try Backend API first (if local server is running)
+    // 2. Try Backend API first (if local server is running or reachable on port 3000)
+    let backendData = null;
     try {
       const res = await fetch('/api/extract', {
         method: 'POST',
@@ -1018,11 +1039,32 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok) {
         const json = await res.json();
         if (json.success && json.data && !isTitleGeneric(json.data.title)) {
-          showReviewForm(json.data);
-          return;
+          backendData = json.data;
         }
       }
     } catch (err) {}
+
+    // If relative endpoint didn't succeed (e.g. running on GitHub Pages or Live Server port 5500), try localhost:3000
+    if (!backendData && location.port !== '3000') {
+      try {
+        const localRes = await fetch('http://localhost:3000/api/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url })
+        });
+        if (localRes.ok) {
+          const json = await localRes.json();
+          if (json.success && json.data && !isTitleGeneric(json.data.title)) {
+            backendData = json.data;
+          }
+        }
+      } catch (err) {}
+    }
+
+    if (backendData) {
+      showReviewForm(backendData);
+      return;
+    }
 
     // 3. Client-side extraction via Microlink + Smart heuristics (GitHub Pages / Standalone)
     try {
@@ -1031,14 +1073,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       let finalTitle = fallback.title;
       if (mlData?.title && !isTitleGeneric(mlData.title)) {
-        finalTitle = mlData.title;
+        finalTitle = cleanTitle(mlData.title);
+      } else if (mlData?.description && !isTitleGeneric(mlData.description)) {
+        finalTitle = cleanTitle(mlData.description);
       }
 
       let finalImage = fallback.image;
-      if (mlData?.image?.url && !mlData.image.url.includes('logo') && !mlData.image.url.includes('sprite') && !mlData.image.url.includes('prime')) {
+      if (mlData?.image?.url && !mlData.image.url.includes('logo') && !mlData.image.url.includes('sprite') && !mlData.image.url.includes('prime') && !mlData.image.url.includes('uedata') && !mlData.image.url.includes('batch')) {
         finalImage = mlData.image.url;
       }
-      const asin = extractAmazonAsin(url);
+      const asin = extractAmazonAsin(mlData?.url || url);
       if (asin) {
         finalImage = `https://m.media-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_SX500_.jpg`;
       }
@@ -1049,10 +1093,10 @@ document.addEventListener('DOMContentLoaded', () => {
         price: fallback.price || '₹ Check Store',
         rawPrice: fallback.rawPrice,
         image: finalImage,
-        rawLink: url,
+        rawLink: mlData?.url || url,
         store: fallback.store,
         domain: fallback.domain,
-        category: fallback.category
+        category: guessCategory(finalTitle, fallback.store)
       });
     } catch (e) {
       const fallbackData = parseFallbackMetadata(url);
